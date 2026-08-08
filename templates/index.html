@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Return-to-Sender Email Interceptor</title>
+    <title>Universal Return-to-Sender Interceptor</title>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
         * {
@@ -137,6 +137,20 @@
             background-clip: text;
         }
 
+        .stat-number.blue {
+            background: linear-gradient(90deg, #60a5fa, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-number.purple {
+            background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
         .stat-label {
             color: #8b949e;
             margin-top: 5px;
@@ -173,6 +187,7 @@
         }
 
         /* Form */
+        .message-form select,
         .message-form input,
         .message-form textarea {
             width: 100%;
@@ -186,8 +201,19 @@
             transition: border-color 0.3s;
         }
 
+        .message-form select {
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .message-form select option {
+            background: #0d1117;
+            color: #e0e0e0;
+        }
+
         .message-form input:focus,
-        .message-form textarea:focus {
+        .message-form textarea:focus,
+        .message-form select:focus {
             outline: none;
             border-color: #ff6b6b;
         }
@@ -247,6 +273,19 @@
 
         .btn-danger:hover {
             background: #b91c1c;
+        }
+
+        .btn-sms {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .btn-sms:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(59, 130, 246, 0.3);
         }
 
         .form-status {
@@ -329,12 +368,19 @@
             color: #4ade80;
         }
 
+        .message-item .type-badge {
+            position: absolute;
+            top: 10px;
+            right: 80px;
+            font-size: 18px;
+        }
+
         .message-header {
             display: flex;
             justify-content: space-between;
             margin-bottom: 8px;
             font-size: 13px;
-            padding-right: 80px;
+            padding-right: 120px;
         }
 
         .message-subject {
@@ -482,13 +528,41 @@
             border-color: #ef4444;
             color: #ef4444;
         }
+
+        .type-indicator {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .type-email {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+
+        .type-sms {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        .type-chat {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a78bfa;
+        }
+
+        .type-unknown {
+            background: rgba(107, 114, 128, 0.2);
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>📬 Return-to-Sender Interceptor</h1>
+            <h1>📱 Universal Return-to-Sender Interceptor</h1>
             <div class="header-status">
                 <div class="status-badge">
                     <span class="dot online" id="statusDot"></span>
@@ -514,8 +588,16 @@
                 <div class="stat-label">Pending</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number" id="activeUsers">0</div>
-                <div class="stat-label">Active Users</div>
+                <div class="stat-number blue" id="emailCount">0</div>
+                <div class="stat-label">📧 Emails</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number green" id="smsCount">0</div>
+                <div class="stat-label">📱 SMS</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number purple" id="chatCount">0</div>
+                <div class="stat-label">💬 Chats</div>
             </div>
         </div>
 
@@ -525,15 +607,26 @@
             <div class="panel">
                 <h2>✉️ Compose Message</h2>
                 <form id="messageForm" class="message-form">
-                    <input type="email" id="sender" placeholder="Your Email (Sender)" required>
-                    <input type="email" id="recipient" placeholder="Recipient Email" required>
-                    <input type="text" id="subject" placeholder="Subject" required>
+                    <select id="messageType">
+                        <option value="email">📧 Email</option>
+                        <option value="sms">📱 SMS/Text</option>
+                        <option value="chat">💬 Chat</option>
+                    </select>
+                    <input type="text" id="sender" placeholder="Sender (email, phone, or username)" required>
+                    <input type="text" id="recipient" placeholder="Recipient" required>
+                    <input type="text" id="subject" placeholder="Subject (optional)">
                     <textarea id="content" placeholder="Type your message here..." required></textarea>
                     <button type="submit" class="btn btn-primary" id="sendBtn">
                         <span id="sendBtnText">📤 Send (Will be intercepted)</span>
                     </button>
                 </form>
                 <div id="formStatus" class="form-status"></div>
+                
+                <!-- Quick SMS Test -->
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #30363d;">
+                    <p style="color: #8b949e; font-size: 12px; margin-bottom: 10px;">Quick SMS Test:</p>
+                    <button class="btn-sms" onclick="sendTestSMS()">📱 Send Test SMS</button>
+                </div>
             </div>
 
             <!-- Messages Panel -->
@@ -547,7 +640,7 @@
                     <div class="empty-state">
                         <div class="icon">📭</div>
                         <p>No messages yet</p>
-                        <p style="font-size: 12px; margin-top: 5px;">Send a message to get started</p>
+                        <p style="font-size: 12px; margin-top: 5px;">Send an email, SMS, or chat message to get started</p>
                     </div>
                 </div>
             </div>
@@ -592,13 +685,15 @@
         });
 
         socket.on('message_received', (data) => {
-            showToast(`📨 Message intercepted from ${data.sender}`, 'success');
+            const icon = data.type_icon || '📨';
+            showToast(`${icon} Message intercepted from ${data.sender}`, 'success');
             loadMessages();
             updateStats();
         });
 
         socket.on('message_returned', (data) => {
-            showToast(`📬 Message from ${data.sender} returned to sender!`, 'success');
+            const icon = data.type_icon || '📬';
+            showToast(`${icon} Message from ${data.sender} returned to sender!`, 'success');
             loadMessages();
             updateStats();
             if (selectedMessageId === data.message_id) {
@@ -639,29 +734,35 @@
                         <div class="empty-state">
                             <div class="icon">📭</div>
                             <p>No messages yet</p>
-                            <p style="font-size: 12px; margin-top: 5px;">Send a message to get started</p>
+                            <p style="font-size: 12px; margin-top: 5px;">Send an email, SMS, or chat message to get started</p>
                         </div>
                     `;
                     return;
                 }
 
-                list.innerHTML = data.messages.map(msg => `
-                    <div class="message-item ${msg.is_returned ? 'returned' : ''}" 
-                         onclick="selectMessage('${msg.id}')">
-                        <span class="badge">${msg.is_returned ? '✅ Returned' : '⏳ Pending'}</span>
-                        <div class="message-header">
-                            <span class="message-subject">${escapeHtml(msg.subject)}</span>
-                            <span class="message-sender">${escapeHtml(msg.sender)}</span>
+                list.innerHTML = data.messages.map(msg => {
+                    const typeIcon = msg.type_icon || '📨';
+                    const typeClass = `type-${msg.type || 'unknown'}`;
+                    return `
+                        <div class="message-item ${msg.is_returned ? 'returned' : ''}" 
+                             onclick="selectMessage('${msg.id}')">
+                            <span class="type-badge">${typeIcon}</span>
+                            <span class="badge">${msg.is_returned ? '✅ Returned' : '⏳ Pending'}</span>
+                            <div class="message-header">
+                                <span class="message-subject">${escapeHtml(msg.subject || 'No Subject')}</span>
+                                <span class="message-sender">${escapeHtml(msg.sender)}</span>
+                            </div>
+                            <div class="message-preview">
+                                <span class="type-indicator ${typeClass}">${msg.type_label || 'Unknown'}</span>
+                                ${escapeHtml(msg.content.substring(0, 100))}${msg.content.length > 100 ? '...' : ''}
+                            </div>
+                            <div class="message-time">
+                                ${new Date(msg.timestamp).toLocaleString()}
+                                ${msg.is_returned ? ` • Returned: ${new Date(msg.return_timestamp).toLocaleString()}` : ''}
+                            </div>
                         </div>
-                        <div class="message-preview">
-                            ${escapeHtml(msg.content.substring(0, 120))}${msg.content.length > 120 ? '...' : ''}
-                        </div>
-                        <div class="message-time">
-                            ${new Date(msg.timestamp).toLocaleString()}
-                            ${msg.is_returned ? ` • Returned: ${new Date(msg.return_timestamp).toLocaleString()}` : ''}
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
 
                 document.getElementById('messageCount').textContent = `📨 ${data.total} messages`;
 
@@ -675,7 +776,6 @@
             selectedMessageId = messageId;
             loadMessageDetail(messageId);
 
-            // Subscribe to real-time updates for this message
             if (!isSubscribed) {
                 socket.emit('subscribe_message', { message_id: messageId });
                 isSubscribed = true;
@@ -698,12 +798,14 @@
                 }
 
                 const detail = document.getElementById('messageDetail');
+                const typeIcon = message.type_icon || '📨';
 
                 let html = `
                     <div class="meta">
+                        <strong>${typeIcon} Type:</strong> ${message.type_label || 'Unknown'}<br>
                         <strong>From:</strong> ${escapeHtml(message.sender)}<br>
                         <strong>To:</strong> ${escapeHtml(message.recipient)}<br>
-                        <strong>Subject:</strong> ${escapeHtml(message.subject)}<br>
+                        ${message.subject ? `<strong>Subject:</strong> ${escapeHtml(message.subject)}<br>` : ''}
                         <strong>Status:</strong> ${message.is_returned ? '✅ Returned to sender' : '⏳ Pending'}<br>
                         <strong>Sent:</strong> ${new Date(message.timestamp).toLocaleString()}
                         ${message.return_timestamp ? `<br><strong>Returned:</strong> ${new Date(message.return_timestamp).toLocaleString()}` : ''}
@@ -772,7 +874,12 @@
                 document.getElementById('totalMessages').textContent = stats.total_messages || 0;
                 document.getElementById('returnedMessages').textContent = stats.returned_count || 0;
                 document.getElementById('pendingMessages').textContent = stats.pending_count || 0;
-                document.getElementById('activeUsers').textContent = stats.active_users || 0;
+
+                // Type breakdown
+                const breakdown = stats.type_breakdown || {};
+                document.getElementById('emailCount').textContent = breakdown.email || 0;
+                document.getElementById('smsCount').textContent = breakdown.sms || 0;
+                document.getElementById('chatCount').textContent = breakdown.chat || 0;
 
                 document.getElementById('storageBadge').textContent = `💾 ${stats.storage || 'In-Memory'}`;
 
@@ -807,12 +914,50 @@
         }
 
         // ============================================================
+        // SEND TEST SMS
+        // ============================================================
+
+        async function sendTestSMS() {
+            const btn = document.querySelector('.btn-sms');
+            const originalText = btn.textContent;
+            btn.textContent = '⏳ Sending...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/send_sms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sender: '+15551234567',
+                        recipient: '+15557654321',
+                        content: 'This is a test SMS from the Return-to-Sender app! 📱'
+                    })
+                });
+
+                const result = await response.json();
+                if (result.error) {
+                    showToast(`❌ ${result.error}`, 'error');
+                } else {
+                    showToast(`📱 Test SMS sent! Message ID: ${result.message_id}`, 'success');
+                    loadMessages();
+                    updateStats();
+                }
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // ============================================================
         // FORM HANDLING
         // ============================================================
 
         document.getElementById('messageForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const messageType = document.getElementById('messageType').value;
             const sender = document.getElementById('sender').value;
             const recipient = document.getElementById('recipient').value;
             const subject = document.getElementById('subject').value;
@@ -822,19 +967,22 @@
             const btnText = document.getElementById('sendBtnText');
             const status = document.getElementById('formStatus');
 
-            // Validate
-            if (!sender || !recipient || !subject || !content) {
-                showFormStatus('Please fill in all fields', 'error');
+            if (!sender || !recipient || !content) {
+                showFormStatus('Please fill in all required fields', 'error');
                 return;
             }
 
-            // Basic email validation
-            if (!sender.includes('@') || !recipient.includes('@')) {
-                showFormStatus('Please enter valid email addresses', 'error');
+            // Validate based on type
+            if (messageType === 'email' && !sender.includes('@')) {
+                showFormStatus('Please enter a valid email address', 'error');
                 return;
             }
 
-            // Disable button
+            if (messageType === 'sms' && !sender.match(/^\+?[\d\s\-()]{7,15}$/)) {
+                showFormStatus('Please enter a valid phone number (e.g., +15551234567)', 'error');
+                return;
+            }
+
             btn.disabled = true;
             btnText.innerHTML = '<span class="loading"></span> Sending...';
             status.className = 'form-status';
@@ -851,12 +999,13 @@
                 if (result.error) {
                     showFormStatus(`❌ ${result.error}`, 'error');
                 } else {
-                    showFormStatus(`✅ ${result.message} (ID: ${result.message_id})`, 'success');
+                    const typeIcons = { 'email': '📧', 'sms': '📱', 'chat': '💬' };
+                    const icon = typeIcons[result.type] || '📨';
+                    showFormStatus(`✅ ${icon} ${result.message}`, 'success');
                     document.getElementById('messageForm').reset();
                     loadMessages();
                     updateStats();
 
-                    // Auto-select the new message
                     setTimeout(() => selectMessage(result.message_id), 500);
                 }
             } catch (error) {
@@ -904,23 +1053,20 @@
         // AUTO-REFRESH
         // ============================================================
 
-        // Initial load
         loadMessages();
         updateStats();
 
-        // Auto-refresh every 5 seconds
         setInterval(() => {
             loadMessages();
             updateStats();
         }, 5000);
 
-        // Ping every 30 seconds to keep connection alive
         setInterval(() => {
             socket.emit('ping');
         }, 30000);
 
-        console.log('📬 Return-to-Sender Interceptor loaded');
+        console.log('📱 Universal Return-to-Sender Interceptor loaded');
         console.log(`🔌 Socket ID: ${socket.id || 'connecting...'}`);
     </script>
 </body>
-  </html>
+                    </html>
