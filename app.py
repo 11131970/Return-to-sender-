@@ -1,5 +1,5 @@
 """
-Universal Return-to-Sender Interceptor
+Universal Return-to-Sender Interceptor - Vercel Compatible
 Supports: Email, SMS/Text, and Chat messages
 """
 
@@ -64,30 +64,16 @@ class StampGenerator:
 class MessageTypeDetector:
     @staticmethod
     def detect_type(sender: str) -> str:
-        """
-        Detect message type based on sender format
-        Returns: 'email', 'sms', 'chat', or 'unknown'
-        """
-        # Email detection: contains @ and domain
         if '@' in sender and '.' in sender:
             return 'email'
-        
-        # SMS detection: starts with + and contains numbers
         if sender.startswith('+') and re.search(r'\d', sender):
             return 'sms'
-        
-        # Phone number detection: contains numbers and maybe dashes/spaces
         if re.match(r'^[\d\s\-()+]{7,15}$', sender):
             return 'sms'
-        
-        # Chat/Username detection: alphanumeric with @ or #
         if sender.startswith('@') or sender.startswith('#'):
             return 'chat'
-        
-        # Default: treat as username
         if re.match(r'^[a-zA-Z0-9_]{3,20}$', sender):
             return 'chat'
-        
         return 'unknown'
 
     @staticmethod
@@ -111,33 +97,6 @@ class MessageTypeDetector:
         return labels.get(message_type, 'Message')
 
 # ============================================================================
-# SMS SIMULATOR (For Demo)
-# ============================================================================
-
-class SMSSimulator:
-    """Simulates SMS sending/receiving for demo purposes"""
-    
-    @staticmethod
-    def send_sms(to_number: str, from_number: str, content: str) -> bool:
-        """Simulate sending an SMS"""
-        logger.info(f"📱 SMS SIMULATED: From {from_number} → To {to_number}")
-        logger.info(f"   Content: {content[:50]}...")
-        # In production, you'd use Twilio, MessageBird, etc.
-        return True
-    
-    @staticmethod
-    def receive_sms(from_number: str, to_number: str, content: str):
-        """Simulate receiving an SMS (would be handled by webhook)"""
-        logger.info(f"📱 SMS RECEIVED: From {from_number}")
-        return {
-            'id': str(uuid.uuid4()),
-            'sender': from_number,
-            'recipient': to_number,
-            'content': content,
-            'type': 'sms'
-        }
-
-# ============================================================================
 # CORE FUNCTIONS
 # ============================================================================
 
@@ -157,7 +116,6 @@ def apply_return_to_sender(message_id: str) -> bool:
         if not message or message['is_returned']:
             return False
         
-        # Get message type
         msg_type = message.get('type', 'unknown')
         
         message['is_returned'] = True
@@ -166,7 +124,6 @@ def apply_return_to_sender(message_id: str) -> bool:
         message['stamp_overlay'] = '\n'.join(StampGenerator.create_stamp())
         message['content'] = StampGenerator.apply_stamp_to_content(message['content'])
         
-        # Add type-specific headers
         if msg_type == 'sms':
             message['content'] = f"📱 SMS FROM: {message['sender']}\nTO: {message['recipient']}\n\n{message['content']}"
         elif msg_type == 'email':
@@ -182,7 +139,8 @@ def apply_return_to_sender(message_id: str) -> bool:
             'recipient': message['recipient'],
             'subject': message.get('subject', ''),
             'timestamp': message['return_timestamp'],
-            'type': msg_type
+            'type': msg_type,
+            'type_icon': MessageTypeDetector.get_type_icon(msg_type)
         }, room='dashboard')
         
         logger.info(f"📬 {msg_type.upper()} message {message_id} returned to sender")
@@ -229,18 +187,13 @@ def get_message_endpoint(message_id):
 
 @app.route('/api/send', methods=['POST'])
 def send_message():
-    """
-    Send a message (supports email, SMS, and chat)
-    """
     data = request.json
     
-    # Validate required fields
     required_fields = ['sender', 'recipient', 'content']
     for field in required_fields:
         if not data.get(field):
             return jsonify({'error': f'Missing field: {field}'}), 400
     
-    # Auto-detect message type
     msg_type = MessageTypeDetector.detect_type(data['sender'])
     
     message_id = str(uuid.uuid4())
@@ -261,10 +214,6 @@ def send_message():
         'type_icon': MessageTypeDetector.get_type_icon(msg_type),
         'type_label': MessageTypeDetector.get_type_label(msg_type)
     }
-    
-    # If SMS, simulate sending
-    if msg_type == 'sms':
-        SMSSimulator.send_sms(data['recipient'], data['sender'], data['content'])
     
     save_message(message)
     message_queue.put(message_id)
@@ -306,7 +255,6 @@ def get_stats():
     returned = sum(1 for m in all_messages if m['is_returned'])
     pending = total - returned
     
-    # Type breakdown
     type_counts = {}
     for msg in all_messages:
         msg_type = msg.get('type', 'unknown')
@@ -321,14 +269,15 @@ def get_stats():
         'type_breakdown': type_counts
     })
 
+@app.route('/api/clear', methods=['POST'])
+def clear_messages():
+    messages.clear()
+    return jsonify({'message': 'All messages cleared'})
+
 @app.route('/api/send_sms', methods=['POST'])
 def send_sms():
-    """
-    Special endpoint for SMS messages
-    """
     data = request.json
     
-    # Validate phone numbers
     sender = data.get('sender', '+15551234567')
     recipient = data.get('recipient', '+15557654321')
     content = data.get('content', '')
@@ -336,7 +285,6 @@ def send_sms():
     if not content:
         return jsonify({'error': 'SMS content required'}), 400
     
-    # Create SMS message
     message_id = str(uuid.uuid4())
     timestamp = datetime.now().isoformat()
     
@@ -368,19 +316,11 @@ def send_sms():
         'type_icon': '📱'
     }, room='dashboard')
     
-    # Simulate SMS sending
-    SMSSimulator.send_sms(recipient, sender, content)
-    
     return jsonify({
         'message': 'SMS intercepted successfully',
         'message_id': message_id,
         'status': 'processing'
     })
-
-@app.route('/api/clear', methods=['POST'])
-def clear_messages():
-    messages.clear()
-    return jsonify({'message': 'All messages cleared'})
 
 # ============================================================================
 # WEBSOCKET EVENTS
@@ -456,7 +396,7 @@ def initialize_sample_data():
         for msg in sample_messages:
             save_message(msg)
         
-        logger.info("📊 Sample data initialized with SMS support")
+        logger.info("📊 Sample data initialized")
 
 # Start background processor
 processor_thread = threading.Thread(target=process_messages_in_background, daemon=True)
@@ -466,21 +406,19 @@ processor_thread.start()
 initialize_sample_data()
 
 # ============================================================================
-# MAIN APPLICATION
+# VERCEL COMPATIBILITY - IMPORTANT!
 # ============================================================================
 
+# This is the app object that Vercel will use
+application = app
+
+# For local development
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("\n" + "=" * 60)
     print("  📱 UNIVERSAL RETURN-TO-SENDER INTERCEPTOR")
     print("=" * 60)
-    print(f"  🚀 Server starting at: http://localhost:5000")
-    print(f"  📡 WebSocket: ws://localhost:5000/socket.io")
-    print("=" * 60)
-    print("\n  SUPPORTED MESSAGE TYPES:")
-    print("  📧 Email (user@domain.com)")
-    print("  📱 SMS/Text (+15551234567)")
-    print("  💬 Chat (@username or #channel)")
+    print(f"  🚀 Server starting at: http://localhost:{port}")
     print("=" * 60 + "\n")
     
     socketio.run(
