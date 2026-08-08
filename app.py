@@ -1,6 +1,6 @@
 """
-Universal Return-to-Sender Interceptor - Vercel Compatible
-Supports: Email, SMS/Text, and Chat messages
+Universal Return-to-Sender Interceptor - Render Compatible
+No gevent required!
 """
 
 import os
@@ -26,7 +26,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 CORS(app)
 
-# Initialize SocketIO
+# Initialize SocketIO - NO gevent needed!
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Storage
@@ -406,13 +406,9 @@ processor_thread.start()
 initialize_sample_data()
 
 # ============================================================================
-# VERCEL COMPATIBILITY - IMPORTANT!
+# MAIN APPLICATION
 # ============================================================================
 
-# This is the app object that Vercel will use
-application = app
-
-# For local development
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("\n" + "=" * 60)
@@ -426,4 +422,4 @@ if __name__ == '__main__':
         debug=False,
         host='0.0.0.0',
         port=port
-    )
+                   )
