@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Return-to-Sender Email Interceptor</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0a0e17;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 30px;
+            background: linear-gradient(135deg, #1a1f2e, #0d1117);
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 1px solid #30363d;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            background: linear-gradient(90deg, #ff6b6b, #ff4444);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: #1c2333;
+            border: 1px solid #30363d;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .dot.online {
+            background: #4ade80;
+        }
+
+        .dot.offline {
+            background: #ef4444;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .storage-badge {
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 12px;
+            background: #1c2333;
+            border: 1px solid #30363d;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #161b22;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #30363d;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #ff6b6b, #ff9f43);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-number.green {
+            background: linear-gradient(90deg, #4ade80, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-number.yellow {
+            background: linear-gradient(90deg, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            color: #8b949e;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        /* Main Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: #161b22;
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid #30363d;
+        }
+
+        .panel h2 {
+            margin-bottom: 20px;
+            font-size: 18px;
+            color: #c9d1d9;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Form */
+        .message-form input,
+        .message-form textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .message-form input:focus,
+        .message-form textarea:focus {
+            outline: none;
+            border-color: #ff6b6b;
+        }
+
+        .message-form textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ff6b6b, #ff4444);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 68, 68, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #1c2333;
+            color: #e0e0e0;
+            border: 1px solid #30363d;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .btn-secondary:hover {
+            background: #2d3748;
+        }
+
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .form-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .form-status.success {
+            display: block;
+            background: rgba(74, 222, 128, 0.1);
+            color: #4ade80;
+            border: 1px solid rgba(74, 222, 128, 0.2);
+        }
+
+        .form-status.error {
+            display: block;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        /* Message List */
+        .message-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .message-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .message-list::-webkit-scrollbar-track {
+            background: #0d1117;
+            border-radius: 4px;
+        }
+
+        .message-list::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+
+        .message-item {
+            background: #0d1117;
+            padding: 15px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b6b;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .message-item:hover {
+            background: #1c2333;
+            transform: translateX(5px);
+        }
+
+        .message-item.returned {
+            border-left-color: #4ade80;
+            opacity: 0.8;
+        }
+
+        .message-item .badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: #1c2333;
+            border: 1px solid #30363d;
+        }
+
+        .message-item.returned .badge {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: #4ade80;
+            color: #4ade80;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+            padding-right: 80px;
+        }
+
+        .message-subject {
+            font-weight: 600;
+            color: #c9d1d9;
+        }
+
+        .message-sender {
+            color: #8b949e;
+        }
+
+        .message-preview {
+            color: #8b949e;
+            font-size: 14px;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #6b7280;
+            margin-top: 5px;
+        }
+
+        /* Message Detail */
+        .message-detail {
+            background: #0d1117;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .message-detail .meta {
+            color: #8b949e;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .message-detail .meta strong {
+            color: #c9d1d9;
+        }
+
+        .stamp-overlay {
+            color: #ff4444;
+            font-weight: bold;
+            background: rgba(255, 68, 68, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid rgba(255, 68, 68, 0.2);
+            font-family: 'Courier New', monospace;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #8b949e;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #161b22;
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 1px solid #30363d;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 1000;
+            max-width: 400px;
+            animation: slideIn 0.5s;
+        }
+
+        .toast.show {
+            display: block;
+        }
+
+        .toast.success {
+            border-color: #4ade80;
+        }
+
+        .toast.error {
+            border-color: #ef4444;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        /* Loading */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #30363d;
+            border-top-color: #ff6b6b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .clear-btn {
+            background: transparent;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .clear-btn:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📬 Return-to-Sender Interceptor</h1>
+            <div class="header-status">
+                <div class="status-badge">
+                    <span class="dot online" id="statusDot"></span>
+                    <span id="connectionStatus">Connected</span>
+                </div>
+                <span class="storage-badge" id="storageBadge">💾 In-Memory</span>
+                <span class="storage-badge" id="messageCount">📨 0 messages</span>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalMessages">0</div>
+                <div class="stat-label">Total Messages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number green" id="returnedMessages">0</div>
+                <div class="stat-label">Returned to Sender</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number yellow" id="pendingMessages">0</div>
+                <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="activeUsers">0</div>
+                <div class="stat-label">Active Users</div>
+            </div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Compose Panel -->
+            <div class="panel">
+                <h2>✉️ Compose Message</h2>
+                <form id="messageForm" class="message-form">
+                    <input type="email" id="sender" placeholder="Your Email (Sender)" required>
+                    <input type="email" id="recipient" placeholder="Recipient Email" required>
+                    <input type="text" id="subject" placeholder="Subject" required>
+                    <textarea id="content" placeholder="Type your message here..." required></textarea>
+                    <button type="submit" class="btn btn-primary" id="sendBtn">
+                        <span id="sendBtnText">📤 Send (Will be intercepted)</span>
+                    </button>
+                </form>
+                <div id="formStatus" class="form-status"></div>
+            </div>
+
+            <!-- Messages Panel -->
+            <div class="panel">
+                <h2>
+                    📨 Message Queue
+                    <button class="btn-secondary" onclick="refreshMessages()" style="margin-left: auto;">🔄 Refresh</button>
+                    <button class="clear-btn" onclick="clearAllMessages()">🗑️ Clear All</button>
+                </h2>
+                <div class="message-list" id="messageList">
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <p>No messages yet</p>
+                        <p style="font-size: 12px; margin-top: 5px;">Send a message to get started</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Detail Panel -->
+        <div class="panel" style="margin-top: 30px;">
+            <h2>📄 Message Details</h2>
+            <div id="messageDetail" class="message-detail">
+                <div class="empty-state">
+                    <div class="icon">👆</div>
+                    <p>Select a message to view details</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ============================================================
+        // SOCKET.IO SETUP
+        // ============================================================
+
+        const socket = io();
+        let selectedMessageId = null;
+        let isSubscribed = false;
+
+        socket.on('connect', () => {
+            updateConnectionStatus(true);
+            showToast('🔌 Connected to interceptor', 'success');
+        });
+
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+            showToast('⚠️ Disconnected from server', 'error');
+        });
+
+        socket.on('connected', (data) => {
+            console.log('Connected:', data);
+        });
+
+        socket.on('message_received', (data) => {
+            showToast(`📨 Message intercepted from ${data.sender}`, 'success');
+            loadMessages();
+            updateStats();
+        });
+
+        socket.on('message_returned', (data) => {
+            showToast(`📬 Message from ${data.sender} returned to sender!`, 'success');
+            loadMessages();
+            updateStats();
+            if (selectedMessageId === data.message_id) {
+                loadMessageDetail(data.message_id);
+            }
+        });
+
+        socket.on('pong', (data) => {
+            console.log('Pong:', data);
+        });
+
+        // ============================================================
+        // UI FUNCTIONS
+        // ============================================================
+
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                dot.className = 'dot online';
+                status.textContent = 'Connected';
+                status.style.color = '#4ade80';
+            } else {
+                dot.className = 'dot offline';
+                status.textContent = 'Disconnected';
+                status.style.color = '#ef4444';
+            }
+        }
+
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/messages');
+                const data = await response.json();
+                const list = document.getElementById('messageList');
+
+                if (data.messages.length === 0) {
+                    list.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <p>No messages yet</p>
+                            <p style="font-size: 12px; margin-top: 5px;">Send a message to get started</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                list.innerHTML = data.messages.map(msg => `
+                    <div class="message-item ${msg.is_returned ? 'returned' : ''}" 
+                         onclick="selectMessage('${msg.id}')">
+                        <span class="badge">${msg.is_returned ? '✅ Returned' : '⏳ Pending'}</span>
+                        <div class="message-header">
+                            <span class="message-subject">${escapeHtml(msg.subject)}</span>
+                            <span class="message-sender">${escapeHtml(msg.sender)}</span>
+                        </div>
+                        <div class="message-preview">
+                            ${escapeHtml(msg.content.substring(0, 120))}${msg.content.length > 120 ? '...' : ''}
+                        </div>
+                        <div class="message-time">
+                            ${new Date(msg.timestamp).toLocaleString()}
+                            ${msg.is_returned ? ` • Returned: ${new Date(msg.return_timestamp).toLocaleString()}` : ''}
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('messageCount').textContent = `📨 ${data.total} messages`;
+
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                showToast('❌ Failed to load messages', 'error');
+            }
+        }
+
+        async function selectMessage(messageId) {
+            selectedMessageId = messageId;
+            loadMessageDetail(messageId);
+
+            // Subscribe to real-time updates for this message
+            if (!isSubscribed) {
+                socket.emit('subscribe_message', { message_id: messageId });
+                isSubscribed = true;
+            }
+        }
+
+        async function loadMessageDetail(messageId) {
+            try {
+                const response = await fetch(`/api/message/${messageId}`);
+                const message = await response.json();
+
+                if (message.error) {
+                    document.getElementById('messageDetail').innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">❌</div>
+                            <p>${message.error}</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const detail = document.getElementById('messageDetail');
+
+                let html = `
+                    <div class="meta">
+                        <strong>From:</strong> ${escapeHtml(message.sender)}<br>
+                        <strong>To:</strong> ${escapeHtml(message.recipient)}<br>
+                        <strong>Subject:</strong> ${escapeHtml(message.subject)}<br>
+                        <strong>Status:</strong> ${message.is_returned ? '✅ Returned to sender' : '⏳ Pending'}<br>
+                        <strong>Sent:</strong> ${new Date(message.timestamp).toLocaleString()}
+                        ${message.return_timestamp ? `<br><strong>Returned:</strong> ${new Date(message.return_timestamp).toLocaleString()}` : ''}
+                        <br>
+                        <div style="margin-top: 10px;">
+                            <button class="btn-secondary" onclick="returnMessage('${message.id}')">
+                                📬 Return to Sender
+                            </button>
+                        </div>
+                    </div>
+                    <hr style="border-color: #30363d; margin: 15px 0;">
+                    <div>${escapeHtml(message.content).replace(/\n/g, '<br>')}</div>
+                `;
+
+                if (message.is_returned && message.stamp_overlay) {
+                    html += `
+                        <div class="stamp-overlay">
+                            <strong>📬 RETURN TO SENDER STAMP</strong>
+                            <pre style="color: #ff4444; margin-top: 10px;">${message.stamp_overlay}</pre>
+                        </div>
+                    `;
+                }
+
+                detail.innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading message detail:', error);
+                document.getElementById('messageDetail').innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">❌</div>
+                        <p>Error loading message</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function returnMessage(messageId) {
+            if (!confirm('Return this message to sender?')) return;
+
+            try {
+                const response = await fetch(`/api/return/${messageId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.error) {
+                    showToast(`❌ ${result.error}`, 'error');
+                } else {
+                    showToast(`📬 ${result.message}`, 'success');
+                    loadMessages();
+                    updateStats();
+                    if (selectedMessageId === messageId) {
+                        loadMessageDetail(messageId);
+                    }
+                }
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+
+                document.getElementById('totalMessages').textContent = stats.total_messages || 0;
+                document.getElementById('returnedMessages').textContent = stats.returned_count || 0;
+                document.getElementById('pendingMessages').textContent = stats.pending_count || 0;
+                document.getElementById('activeUsers').textContent = stats.active_users || 0;
+
+                document.getElementById('storageBadge').textContent = `💾 ${stats.storage || 'In-Memory'}`;
+
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            }
+        }
+
+        async function refreshMessages() {
+            await loadMessages();
+            await updateStats();
+            showToast('🔄 Refreshed', 'success');
+        }
+
+        async function clearAllMessages() {
+            if (!confirm('⚠️ Delete all messages? This cannot be undone!')) return;
+
+            try {
+                await fetch('/api/clear', { method: 'POST' });
+                showToast('🗑️ All messages cleared', 'success');
+                loadMessages();
+                updateStats();
+                document.getElementById('messageDetail').innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <p>No messages</p>
+                    </div>
+                `;
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        // ============================================================
+        // FORM HANDLING
+        // ============================================================
+
+        document.getElementById('messageForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const sender = document.getElementById('sender').value;
+            const recipient = document.getElementById('recipient').value;
+            const subject = document.getElementById('subject').value;
+            const content = document.getElementById('content').value;
+
+            const btn = document.getElementById('sendBtn');
+            const btnText = document.getElementById('sendBtnText');
+            const status = document.getElementById('formStatus');
+
+            // Validate
+            if (!sender || !recipient || !subject || !content) {
+                showFormStatus('Please fill in all fields', 'error');
+                return;
+            }
+
+            // Basic email validation
+            if (!sender.includes('@') || !recipient.includes('@')) {
+                showFormStatus('Please enter valid email addresses', 'error');
+                return;
+            }
+
+            // Disable button
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="loading"></span> Sending...';
+            status.className = 'form-status';
+
+            try {
+                const response = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sender, recipient, subject, content })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    showFormStatus(`❌ ${result.error}`, 'error');
+                } else {
+                    showFormStatus(`✅ ${result.message} (ID: ${result.message_id})`, 'success');
+                    document.getElementById('messageForm').reset();
+                    loadMessages();
+                    updateStats();
+
+                    // Auto-select the new message
+                    setTimeout(() => selectMessage(result.message_id), 500);
+                }
+            } catch (error) {
+                showFormStatus(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btnText.textContent = '📤 Send (Will be intercepted)';
+            }
+        });
+
+        function showFormStatus(message, type) {
+            const status = document.getElementById('formStatus');
+            status.textContent = message;
+            status.className = `form-status ${type}`;
+            setTimeout(() => {
+                status.className = 'form-status';
+            }, 5000);
+        }
+
+        // ============================================================
+        // TOAST NOTIFICATIONS
+        // ============================================================
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast show ${type}`;
+            clearTimeout(toast.timeout);
+            toast.timeout = setTimeout(() => {
+                toast.className = 'toast';
+            }, 4000);
+        }
+
+        // ============================================================
+        // UTILITY FUNCTIONS
+        // ============================================================
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============================================================
+        // AUTO-REFRESH
+        // ============================================================
+
+        // Initial load
+        loadMessages();
+        updateStats();
+
+        // Auto-refresh every 5 seconds
+        setInterval(() => {
+            loadMessages();
+            updateStats();
+        }, 5000);
+
+        // Ping every 30 seconds to keep connection alive
+        setInterval(() => {
+            socket.emit('ping');
+        }, 30000);
+
+        console.log('📬 Return-to-Sender Interceptor loaded');
+        console.log(`🔌 Socket ID: ${socket.id || 'connecting...'}`);
+    </script>
+</body>
+  </html>
