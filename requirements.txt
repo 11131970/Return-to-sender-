@@ -1,7 +1,8 @@
+
 flask==2.3.3
 flask-socketio==5.3.4
 flask-cors==4.0.0
 gunicorn==21.2.0
 eventlet==0.33.3
-gevent==23.9.1
+greenlet==2.0.2
 python-dotenv==1.0.0
