@@ -1,6 +1,8 @@
 """
-Return-to-Sender Email Interceptor - Complete Application
+Universal Return-to-Sender Interceptor
+Supports: Email, SMS/Text, and Chat messages
 """
+
 import os
 import json
 import uuid
@@ -13,6 +15,7 @@ from flask_cors import CORS
 import threading
 import time
 from queue import Queue
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +58,86 @@ class StampGenerator:
         return f"{content}\n\n{'─' * 40}\n{stamp_text}\n{'─' * 40}"
 
 # ============================================================================
+# MESSAGE TYPE DETECTION
+# ============================================================================
+
+class MessageTypeDetector:
+    @staticmethod
+    def detect_type(sender: str) -> str:
+        """
+        Detect message type based on sender format
+        Returns: 'email', 'sms', 'chat', or 'unknown'
+        """
+        # Email detection: contains @ and domain
+        if '@' in sender and '.' in sender:
+            return 'email'
+        
+        # SMS detection: starts with + and contains numbers
+        if sender.startswith('+') and re.search(r'\d', sender):
+            return 'sms'
+        
+        # Phone number detection: contains numbers and maybe dashes/spaces
+        if re.match(r'^[\d\s\-()+]{7,15}$', sender):
+            return 'sms'
+        
+        # Chat/Username detection: alphanumeric with @ or #
+        if sender.startswith('@') or sender.startswith('#'):
+            return 'chat'
+        
+        # Default: treat as username
+        if re.match(r'^[a-zA-Z0-9_]{3,20}$', sender):
+            return 'chat'
+        
+        return 'unknown'
+
+    @staticmethod
+    def get_type_icon(message_type: str) -> str:
+        icons = {
+            'email': '📧',
+            'sms': '📱',
+            'chat': '💬',
+            'unknown': '❓'
+        }
+        return icons.get(message_type, '📨')
+
+    @staticmethod
+    def get_type_label(message_type: str) -> str:
+        labels = {
+            'email': 'Email',
+            'sms': 'SMS/Text',
+            'chat': 'Chat Message',
+            'unknown': 'Unknown'
+        }
+        return labels.get(message_type, 'Message')
+
+# ============================================================================
+# SMS SIMULATOR (For Demo)
+# ============================================================================
+
+class SMSSimulator:
+    """Simulates SMS sending/receiving for demo purposes"""
+    
+    @staticmethod
+    def send_sms(to_number: str, from_number: str, content: str) -> bool:
+        """Simulate sending an SMS"""
+        logger.info(f"📱 SMS SIMULATED: From {from_number} → To {to_number}")
+        logger.info(f"   Content: {content[:50]}...")
+        # In production, you'd use Twilio, MessageBird, etc.
+        return True
+    
+    @staticmethod
+    def receive_sms(from_number: str, to_number: str, content: str):
+        """Simulate receiving an SMS (would be handled by webhook)"""
+        logger.info(f"📱 SMS RECEIVED: From {from_number}")
+        return {
+            'id': str(uuid.uuid4()),
+            'sender': from_number,
+            'recipient': to_number,
+            'content': content,
+            'type': 'sms'
+        }
+
+# ============================================================================
 # CORE FUNCTIONS
 # ============================================================================
 
@@ -74,11 +157,22 @@ def apply_return_to_sender(message_id: str) -> bool:
         if not message or message['is_returned']:
             return False
         
+        # Get message type
+        msg_type = message.get('type', 'unknown')
+        
         message['is_returned'] = True
         message['return_timestamp'] = datetime.now().isoformat()
         message['status'] = 'returned'
         message['stamp_overlay'] = '\n'.join(StampGenerator.create_stamp())
         message['content'] = StampGenerator.apply_stamp_to_content(message['content'])
+        
+        # Add type-specific headers
+        if msg_type == 'sms':
+            message['content'] = f"📱 SMS FROM: {message['sender']}\nTO: {message['recipient']}\n\n{message['content']}"
+        elif msg_type == 'email':
+            message['content'] = f"📧 EMAIL FROM: {message['sender']}\nTO: {message['recipient']}\nSUBJECT: {message.get('subject', 'No Subject')}\n\n{message['content']}"
+        elif msg_type == 'chat':
+            message['content'] = f"💬 CHAT FROM: {message['sender']}\nTO: {message['recipient']}\n\n{message['content']}"
         
         save_message(message)
         
@@ -86,11 +180,12 @@ def apply_return_to_sender(message_id: str) -> bool:
             'message_id': message_id,
             'sender': message['sender'],
             'recipient': message['recipient'],
-            'subject': message['subject'],
-            'timestamp': message['return_timestamp']
+            'subject': message.get('subject', ''),
+            'timestamp': message['return_timestamp'],
+            'type': msg_type
         }, room='dashboard')
         
-        logger.info(f"📬 Message {message_id} returned to sender")
+        logger.info(f"📬 {msg_type.upper()} message {message_id} returned to sender")
         return True
         
     except Exception as e:
@@ -134,12 +229,19 @@ def get_message_endpoint(message_id):
 
 @app.route('/api/send', methods=['POST'])
 def send_message():
+    """
+    Send a message (supports email, SMS, and chat)
+    """
     data = request.json
     
-    required_fields = ['sender', 'recipient', 'subject', 'content']
+    # Validate required fields
+    required_fields = ['sender', 'recipient', 'content']
     for field in required_fields:
         if not data.get(field):
             return jsonify({'error': f'Missing field: {field}'}), 400
+    
+    # Auto-detect message type
+    msg_type = MessageTypeDetector.detect_type(data['sender'])
     
     message_id = str(uuid.uuid4())
     timestamp = datetime.now().isoformat()
@@ -148,14 +250,21 @@ def send_message():
         'id': message_id,
         'sender': data['sender'],
         'recipient': data['recipient'],
-        'subject': data['subject'],
         'content': data['content'],
+        'subject': data.get('subject', ''),
         'timestamp': timestamp,
         'is_returned': False,
         'return_timestamp': None,
         'status': 'pending',
-        'stamp_overlay': ''
+        'stamp_overlay': '',
+        'type': msg_type,
+        'type_icon': MessageTypeDetector.get_type_icon(msg_type),
+        'type_label': MessageTypeDetector.get_type_label(msg_type)
     }
+    
+    # If SMS, simulate sending
+    if msg_type == 'sms':
+        SMSSimulator.send_sms(data['recipient'], data['sender'], data['content'])
     
     save_message(message)
     message_queue.put(message_id)
@@ -163,13 +272,18 @@ def send_message():
     socketio.emit('message_received', {
         'message_id': message_id,
         'sender': data['sender'],
-        'subject': data['subject'],
-        'timestamp': timestamp
+        'subject': data.get('subject', ''),
+        'timestamp': timestamp,
+        'type': msg_type,
+        'type_icon': MessageTypeDetector.get_type_icon(msg_type)
     }, room='dashboard')
     
+    logger.info(f"📨 {msg_type.upper()} message {message_id} received from {data['sender']}")
+    
     return jsonify({
-        'message': 'Message intercepted successfully',
+        'message': f'Message intercepted successfully ({msg_type})',
         'message_id': message_id,
+        'type': msg_type,
         'status': 'processing'
     })
 
@@ -192,12 +306,75 @@ def get_stats():
     returned = sum(1 for m in all_messages if m['is_returned'])
     pending = total - returned
     
+    # Type breakdown
+    type_counts = {}
+    for msg in all_messages:
+        msg_type = msg.get('type', 'unknown')
+        type_counts[msg_type] = type_counts.get(msg_type, 0) + 1
+    
     return jsonify({
         'total_messages': total,
         'returned_count': returned,
         'pending_count': pending,
         'active_users': len(active_rooms),
-        'storage': 'in-memory'
+        'storage': 'in-memory',
+        'type_breakdown': type_counts
+    })
+
+@app.route('/api/send_sms', methods=['POST'])
+def send_sms():
+    """
+    Special endpoint for SMS messages
+    """
+    data = request.json
+    
+    # Validate phone numbers
+    sender = data.get('sender', '+15551234567')
+    recipient = data.get('recipient', '+15557654321')
+    content = data.get('content', '')
+    
+    if not content:
+        return jsonify({'error': 'SMS content required'}), 400
+    
+    # Create SMS message
+    message_id = str(uuid.uuid4())
+    timestamp = datetime.now().isoformat()
+    
+    message = {
+        'id': message_id,
+        'sender': sender,
+        'recipient': recipient,
+        'content': content,
+        'subject': 'SMS Message',
+        'timestamp': timestamp,
+        'is_returned': False,
+        'return_timestamp': None,
+        'status': 'pending',
+        'stamp_overlay': '',
+        'type': 'sms',
+        'type_icon': '📱',
+        'type_label': 'SMS/Text'
+    }
+    
+    save_message(message)
+    message_queue.put(message_id)
+    
+    socketio.emit('message_received', {
+        'message_id': message_id,
+        'sender': sender,
+        'subject': 'SMS Message',
+        'timestamp': timestamp,
+        'type': 'sms',
+        'type_icon': '📱'
+    }, room='dashboard')
+    
+    # Simulate SMS sending
+    SMSSimulator.send_sms(recipient, sender, content)
+    
+    return jsonify({
+        'message': 'SMS intercepted successfully',
+        'message_id': message_id,
+        'status': 'processing'
     })
 
 @app.route('/api/clear', methods=['POST'])
@@ -239,28 +416,47 @@ def initialize_sample_data():
                 'is_returned': False,
                 'return_timestamp': None,
                 'status': 'pending',
-                'stamp_overlay': ''
+                'stamp_overlay': '',
+                'type': 'email',
+                'type_icon': '📧',
+                'type_label': 'Email'
             },
             {
                 'id': str(uuid.uuid4()),
-                'sender': 'carol@domain.com',
-                'recipient': 'dave@domain.com',
-                'subject': 'Meeting Reschedule',
-                'content': 'Dave, can we move the 3pm meeting to 4pm?',
+                'sender': '+15551234567',
+                'recipient': '+15557654321',
+                'subject': 'SMS Test',
+                'content': 'Hey, can we reschedule our meeting to 4pm?',
+                'timestamp': datetime.now().isoformat(),
+                'is_returned': False,
+                'return_timestamp': None,
+                'status': 'pending',
+                'stamp_overlay': '',
+                'type': 'sms',
+                'type_icon': '📱',
+                'type_label': 'SMS/Text'
+            },
+            {
+                'id': str(uuid.uuid4()),
+                'sender': '@johndoe',
+                'recipient': '@janedoe',
+                'subject': 'Chat Message',
+                'content': 'Are you coming to the party tonight?',
                 'timestamp': datetime.now().isoformat(),
                 'is_returned': True,
                 'return_timestamp': datetime.now().isoformat(),
                 'status': 'returned',
-                'stamp_overlay': '\n'.join(StampGenerator.create_stamp())
+                'stamp_overlay': '\n'.join(StampGenerator.create_stamp()),
+                'type': 'chat',
+                'type_icon': '💬',
+                'type_label': 'Chat Message'
             }
         ]
         
-        sample_messages[1]['content'] = StampGenerator.apply_stamp_to_content(
-            sample_messages[1]['content']
-        )
-        
         for msg in sample_messages:
             save_message(msg)
+        
+        logger.info("📊 Sample data initialized with SMS support")
 
 # Start background processor
 processor_thread = threading.Thread(target=process_messages_in_background, daemon=True)
@@ -275,9 +471,21 @@ initialize_sample_data()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    print("\n" + "=" * 60)
+    print("  📱 UNIVERSAL RETURN-TO-SENDER INTERCEPTOR")
+    print("=" * 60)
+    print(f"  🚀 Server starting at: http://localhost:5000")
+    print(f"  📡 WebSocket: ws://localhost:5000/socket.io")
+    print("=" * 60)
+    print("\n  SUPPORTED MESSAGE TYPES:")
+    print("  📧 Email (user@domain.com)")
+    print("  📱 SMS/Text (+15551234567)")
+    print("  💬 Chat (@username or #channel)")
+    print("=" * 60 + "\n")
+    
     socketio.run(
         app,
         debug=False,
         host='0.0.0.0',
         port=port
-  )
+    )
